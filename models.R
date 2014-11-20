@@ -2,6 +2,8 @@ library("dplyr")
 library("tidyr")
 library("glmnet")
 library("pROC")
+library("ROCR")
+library("RColorBrewer")
 
 set.seed(123)
 
@@ -66,54 +68,54 @@ m.gh = cv.glmnet(x.gh.normed,
                  grouped=F,
                  alpha=0)
 
-# predict HD on GH
+#### PREDICTIONS ####
 
+# format for these variables
+# <set used for training>_<set used for prediction>
+# e.g. hd_gh is the the model trained on hd,
+#      and predicted on gh
+
+# the elastic net automatically does 
+# LOOCV cross-validation
 get.loocv = function(m) m$fit.preval[ ,m$lambda == m$lambda.1se]
+hd_hd = get.loocv(m.hd)
+gh_gh = get.loocv(m.gh)
+hd_gh = predict(m.hd, newx=x.gh.normed)
+gh_hd = predict(m.gh, newx=x.hd.normed)
 
-p1 = get.loocv(m.hd)
-p2 = get.loocv(m.gh)
-p3 = predict(m.hd, newx=x.gh.normed)
-p4 = predict(m.gh, newx=x.hd.normed)
+# AUCs
 
-r1 = roc(y.hd, p1)
-r2 = roc(y.gh, p2)
-r3 = roc(y.gh, p3)
-r4 = roc(y.hd, p4)
+# we have to use the weird notation because there
+# are a lot of functions called "auc" and "roc"
+# gotta make sure we're calling the right one
+
+auc.hd_hd = pROC::auc(pROC::roc(y.hd, hd_hd))
+auc.gh_hd = pROC::auc(pROC::roc(y.hd, gh_hd))
+auc.gh_gh = pROC::auc(pROC::roc(y.gh, gh_gh))
+auc.hd_gh = pROC::auc(pROC::roc(y.gh, hd_gh))
+
+# ROC curves
+
+roc.hd_hd = performance(prediction(hd_hd, y.hd), "tpr", "fpr")
+roc.gh_hd = performance(prediction(gh_hd, y.hd), "tpr", "fpr")
+roc.gh_gh = performance(prediction(gh_gh, y.gh), "tpr", "fpr")
+roc.hd_gh = performance(prediction(hd_gh, y.gh), "tpr", "fpr")
 
 col = brewer.pal(4, "Paired")[c(2,4,1,3)]
 
-plot(r1, col=col[1])
-plot(r2, add=T, col=col[2])
-plot(r3, add=T, col=col[3])
-plot(r4, add=T, col=col[4])
+pdf("4_roc_curves.pdf")
 
+plot(roc.hd_hd, lwd=2, col=col[1], main="qPCR ROC")
+plot(roc.gh_gh, lwd=2, col=col[2], add=T)
+plot(roc.gh_hd, lwd=2, col=col[3], add=T)
+plot(roc.hd_gh, lwd=2, col=col[4], add=T)
 
+legend(0.2, 0.3, 
+       c("LOOCV with Health Donors", 
+         "LOOCV with Gene Heart",
+         "Gene Heart predictions with Healthy Donor Model", 
+         "Heathy Donor predictions with Gene Heart Model"),
+       lwd=2,
+       col=col)
 
-#### BOX PLOTS ####
-
-make.bp = function(i){
-  v = x[,i]
-  
-  stripchart(v ~ y + cohort,
-             pch=20,
-             frame=F,
-             main=gsub(".CT", "", colnames(x)[i]),
-             vertical=T,
-             method="jitter",
-             ylab="Normalized CT")
-}
-
-x = rbind(x.hd.normed, x.gh.normed)
-
-y = c(as.character(y.hd), 
-      as.character(y.gh))
-
-cohort = c(rep("HD", nrow(x.hd)),
-           rep("GH", nrow(x.gh)))
-
-pdf("boxplots.pdf")
-par(cex=1.3)
-sapply(1:10, make.bp)
 dev.off()
-
-
