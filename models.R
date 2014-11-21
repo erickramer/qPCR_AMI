@@ -5,6 +5,7 @@ library("pROC")
 library("ROCR")
 library("RColorBrewer")
 
+
 set.seed(123)
 
 #### LOAD AND NORMALIZE DATA ####
@@ -14,11 +15,12 @@ set.seed(123)
 # gh: gene heart controls
 
 hd = read.delim("./data/healthy_donor.txt",
-                na.strings="Undetermined") 
-
+                na.strings="Undetermined") %>%
+  filter(ID != 132) # Patient 132 is missing values for 6 genes
+                    # Discarding as low quality
 
 gh = read.delim("./data/gene_heart.txt",
-                na.strings="Undetermined") 
+                na.strings="Undetermined")
 
 
 # Select qPCR data from data frame
@@ -94,28 +96,33 @@ auc.gh_hd = pROC::auc(pROC::roc(y.hd, gh_hd))
 auc.gh_gh = pROC::auc(pROC::roc(y.gh, gh_gh))
 auc.hd_gh = pROC::auc(pROC::roc(y.gh, hd_gh))
 
+ci.auc.hd_hd = ci.auc(pROC::roc(y.hd, hd_hd))
+ci.auc.gh_hd = ci.auc(pROC::roc(y.hd, gh_hd))
+ci.auc.gh_gh = ci.auc(pROC::roc(y.gh, gh_gh))
+ci.auc.hd_gh = ci.auc(pROC::roc(y.gh, hd_gh))
+
+lb.aucs = sapply(list(ci.auc.hd_hd,
+                      ci.auc.hd_gh,
+                      ci.auc.gh_gh,
+                      ci.auc.gh_hd), function(x) x[1])
+
+ub.aucs = sapply(list(ci.auc.hd_hd,
+                      ci.auc.hd_gh,
+                      ci.auc.gh_gh,
+                      ci.auc.gh_hd), function(x) x[3])
+
+aucs = data.frame("Training Set"=c("HD", "HD", "GH", "GH"),
+                  "Testing Set"=c("HD", "GH", "GH", "HD"),
+                  AUC=c(auc.hd_hd, auc.hd_gh, auc.gh_gh, auc.gh_hd),
+                  AUC.Lower=lb.aucs,
+                  AUC.Upper=ub.aucs)
+
+write.table(aucs, file="aucs.csv", sep=",", col.names=T,
+            row.names=F)
+
 # ROC curves
 
 roc.hd_hd = performance(prediction(hd_hd, y.hd), "tpr", "fpr")
 roc.gh_hd = performance(prediction(gh_hd, y.hd), "tpr", "fpr")
 roc.gh_gh = performance(prediction(gh_gh, y.gh), "tpr", "fpr")
 roc.hd_gh = performance(prediction(hd_gh, y.gh), "tpr", "fpr")
-
-col = brewer.pal(4, "Paired")[c(2,4,1,3)]
-
-pdf("4_roc_curves.pdf")
-
-plot(roc.hd_hd, lwd=2, col=col[1], main="qPCR ROC")
-plot(roc.gh_gh, lwd=2, col=col[2], add=T)
-plot(roc.gh_hd, lwd=2, col=col[3], add=T)
-plot(roc.hd_gh, lwd=2, col=col[4], add=T)
-
-legend(0.2, 0.3, 
-       c("LOOCV with Health Donors", 
-         "LOOCV with Gene Heart",
-         "Gene Heart predictions with Healthy Donor Model", 
-         "Heathy Donor predictions with Gene Heart Model"),
-       lwd=2,
-       col=col)
-
-dev.off()
